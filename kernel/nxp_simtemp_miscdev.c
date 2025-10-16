@@ -19,6 +19,12 @@
 
 static struct simtemp_dev *misc_simtemp_dev;
 
+static int simtemp_open(struct inode *inode, struct file *filp)
+{
+    filp->private_data = misc_simtemp_dev;
+    return 0;
+}
+
 /**
  * @brief Read function for the misc device.
  *
@@ -34,7 +40,7 @@ static struct simtemp_dev *misc_simtemp_dev;
 static ssize_t simtemp_read(struct file *filp, char __user *buf,
                              size_t count, loff_t *offp)
 {
-    struct simtemp_dev *simtemp = misc_simtemp_dev;
+struct simtemp_dev *simtemp = filp->private_data;
     s32 temp_mc;
     int ret;
 
@@ -59,6 +65,7 @@ static ssize_t simtemp_read(struct file *filp, char __user *buf,
 
 static const struct file_operations simtemp_fops = {
     .owner = THIS_MODULE,
+    .open = simtemp_open,
     .read = simtemp_read,
 };
 
@@ -80,10 +87,10 @@ static struct miscdevice simtemp_miscdev = {
 int nxp_simtemp_miscdev_init(struct simtemp_dev *simtemp)
 {
     int ret;
-    misc_simtemp_dev = simtemp;
 
+    misc_simtemp_dev = simtemp;
     /* Set the parent device before registering */
-    simtemp_miscdev.parent = simtemp->dev;
+    //simtemp_miscdev.parent = simtemp->dev;
 
     ret = misc_register(&simtemp_miscdev);
     if (ret) {
