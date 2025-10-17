@@ -16,6 +16,8 @@
 #include <linux/mutex.h>
 #include <linux/timer.h>
 #include <linux/types.h>
+#include <linux/miscdevice.h>
+#include "simtemp_debug.h"
 
 /**
  * @brief Enumeration for the simulation modes.
@@ -41,7 +43,7 @@ struct simtemp_stats {
  */
 struct simtemp_dev {
     struct device *dev;         /* Pointer to the underlying device */
-    struct device *misc_dev;    /* Pointer to the misc device's device struct */
+    struct miscdevice misc_dev;    /* misc device's device struct */
     struct mutex lock;          /* Mutex for protecting shared data */
     struct timer_list timer;    /* Kernel timer for the simulator */
 
@@ -54,5 +56,7 @@ struct simtemp_dev {
     s32 temp_mc;                /* Current temperature in milli-Celsius */
     struct simtemp_stats stats;/* Statistics counters */
 };
+
+
 
 #endif /* NXP_SIMTEMP_H_ */

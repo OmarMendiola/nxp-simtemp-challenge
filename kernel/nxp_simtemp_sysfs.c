@@ -22,6 +22,9 @@ static ssize_t sampling_ms_show(struct device *dev,
                                 struct device_attribute *attr, char *buf)
 {
     struct simtemp_dev *simtemp = dev_get_drvdata(dev);
+    debug_pr_addr("show: dev    ", dev);
+    debug_pr_addr("show: simtemp", simtemp);
+
     return sysfs_emit(buf, "%u\n", simtemp->sampling_ms);
 }
 
@@ -133,20 +136,24 @@ static struct attribute_group simtemp_attr_group = {
 /**
  * @brief Initializes the sysfs interface for the device.
  *
- * @param dev Pointer to the device structure.
+ * @param simtemp Pointer to the simtemp device structure.
  * @return int 0 on success, or a negative error code on failure.
  */
-int nxp_simtemp_sysfs_init(struct device *dev)
+int nxp_simtemp_sysfs_init(struct simtemp_dev *simtemp)
 {
-    return sysfs_create_group(&dev->kobj, &simtemp_attr_group);
+    // Create the sysfs group under the misc device's device kobject
+    debug_pr_addr("Sysfs init: miscdevice", &simtemp->misc_dev);
+    debug_pr_addr("Sysfs init: device of miscdevice", simtemp->misc_dev.this_device);
+    debug_pr_addr("Sysfs init: kobj", &simtemp->misc_dev.this_device->kobj);
+    return sysfs_create_group(&simtemp->misc_dev.this_device->kobj, &simtemp_attr_group);
 }
 
 /**
  * @brief Deinitializes the sysfs interface for the device.
  *
- * @param dev Pointer to the device structure.
+ * @param simtemp Pointer to the simtemp device structure.
  */
-void nxp_simtemp_sysfs_exit(struct device *dev)
+void nxp_simtemp_sysfs_exit(struct simtemp_dev *simtemp)
 {
-    sysfs_remove_group(&dev->kobj, &simtemp_attr_group);
+    sysfs_remove_group(&simtemp->misc_dev.this_device->kobj, &simtemp_attr_group);
 }

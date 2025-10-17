@@ -17,7 +17,25 @@
 
 #include "nxp_simtemp.h"
 
-static struct simtemp_dev *misc_simtemp_dev;
+
+static int simtemp_open(struct inode *inode, struct file *filp)
+{
+    struct simtemp_dev *simtemp;
+    struct miscdevice *misc_device;
+
+    // misc_device = container_of(inode->i_cdev, struct miscdevice, this_device->cdev);
+    // simtemp = container_of(misc_device, struct simtemp_dev, misc_dev);
+
+    misc_device = filp->private_data;
+    simtemp = container_of(misc_device, struct simtemp_dev, misc_dev);
+
+    debug_pr_addr("simtemp_open: inode", inode);
+    debug_pr_addr("simtemp_open: misc_device", misc_device);
+    debug_pr_addr("simtemp_open: simtemp", simtemp);
+
+    filp->private_data = simtemp;
+    return 0;
+}
 
 /**
  * @brief Read function for the misc device.
@@ -34,7 +52,7 @@ static struct simtemp_dev *misc_simtemp_dev;
 static ssize_t simtemp_read(struct file *filp, char __user *buf,
                              size_t count, loff_t *offp)
 {
-    struct simtemp_dev *simtemp = misc_simtemp_dev;
+struct simtemp_dev *simtemp = filp->private_data;
     s32 temp_mc;
     int ret;
 
@@ -59,13 +77,8 @@ static ssize_t simtemp_read(struct file *filp, char __user *buf,
 
 static const struct file_operations simtemp_fops = {
     .owner = THIS_MODULE,
+    .open = simtemp_open,
     .read = simtemp_read,
-};
-
-static struct miscdevice simtemp_miscdev = {
-    .minor = MISC_DYNAMIC_MINOR,
-    .name = "simtemp",
-    .fops = &simtemp_fops,
 };
 
 /**
@@ -80,26 +93,33 @@ static struct miscdevice simtemp_miscdev = {
 int nxp_simtemp_miscdev_init(struct simtemp_dev *simtemp)
 {
     int ret;
-    misc_simtemp_dev = simtemp;
+    struct miscdevice *misc_device = &simtemp->misc_dev;
 
+    misc_device->minor = MISC_DYNAMIC_MINOR;
+    misc_device->name = "simtemp";
+    misc_device->fops = &simtemp_fops;
     /* Set the parent device before registering */
-    simtemp_miscdev.parent = simtemp->dev;
+    misc_device->parent = simtemp->dev; //platform device's is the parent
 
-    ret = misc_register(&simtemp_miscdev);
+     printk(KERN_INFO "Registering misc device: %s\n", misc_device->name); 
+
+    ret = misc_register(misc_device);
     if (ret) {
         pr_err("Failed to register misc device\n");
         return ret;
     }
 
-    /* Store the created device pointer for sysfs association */
-    simtemp->misc_dev = simtemp_miscdev.this_device;
+    /* Store per-device context for retrieval via dev_get_drvdata(). */
+    /* Tied to misc->this_device lifecycle. */
+    dev_set_drvdata(misc_device->this_device, simtemp);
+
     return 0;
 }
 
 /**
  * @brief Deinitializes the miscellaneous device.
  */
-void nxp_simtemp_miscdev_exit(void)
+void nxp_simtemp_miscdev_exit(struct simtemp_dev *simtemp)
 {
-    misc_deregister(&simtemp_miscdev);
+    misc_deregister(&simtemp->misc_dev);
 }
