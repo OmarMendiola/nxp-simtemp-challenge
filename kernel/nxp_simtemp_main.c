@@ -19,12 +19,14 @@
 #include "nxp_simtemp.h"
 
 /* Forward declarations for functions defined in other files */
-extern int nxp_simtemp_miscdev_init(struct simtemp_dev *dev);
-extern void nxp_simtemp_miscdev_exit(void);
-extern int nxp_simtemp_simulator_init(struct simtemp_dev *dev);
-extern void nxp_simtemp_simulator_exit(struct simtemp_dev *dev);
-extern int nxp_simtemp_sysfs_init(struct device *dev);
-extern void nxp_simtemp_sysfs_exit(struct device *dev);
+extern int nxp_simtemp_miscdev_init(struct simtemp_dev *simtemp);
+extern void nxp_simtemp_miscdev_exit(struct simtemp_dev *simtemp);
+extern int nxp_simtemp_simulator_init(struct simtemp_dev *simtemp);
+extern void nxp_simtemp_simulator_exit(struct simtemp_dev *simtemp);
+extern int nxp_simtemp_sysfs_init(struct simtemp_dev *simtemp);
+extern void nxp_simtemp_sysfs_exit(struct simtemp_dev *simtemp);
+extern void nxp_simtemp_locks_init(struct simtemp_dev *simtemp);
+extern void nxp_simtemp_locks_exit(struct simtemp_dev *simtemp);
 
 
 /**
@@ -50,39 +52,48 @@ struct device *dev = &pdev->dev;
         return -ENOMEM;
     }
 
+    debug_pr_addr("simtemp_dev",simtemp);
+    debug_pr_addr("misc_dev", &simtemp->misc_dev);
+
     simtemp->dev = dev;
     platform_set_drvdata(pdev, simtemp);
 
-    ret = nxp_simtemp_simulator_init(simtemp);
-    if (ret) {
-        dev_err(dev, "Failed to initialize simulator\n");
-        return ret;
-    }
+    /*Initialize simtemp locks (mutex)*/
+    nxp_simtemp_locks_init(simtemp);
 
-    /* 1. Initialize misc device, which now populates simtemp->misc_dev */
+    /*Initialize misc device, which now populates simtemp->misc_dev */
     ret = nxp_simtemp_miscdev_init(simtemp);
     if (ret) {
         dev_err(dev, "Failed to initialize misc device\n");
-        goto err_simulator;
+        goto err_cleanup;
     }
 
-    /* 2. Associate our main data struct with the new misc device's device struct */
-    dev_set_drvdata(simtemp->misc_dev, simtemp);
+    /* Initialize sysfs using the misc device's device struct */
+    ret = nxp_simtemp_sysfs_init(simtemp);
+    if (ret) {
+        dev_err(dev, "Failed to initialize sysfs\n");
+        goto err_miscdev;
+    }
 
-//     /* 3. Initialize sysfs using the misc device's device struct */
-//     ret = nxp_simtemp_sysfs_init(simtemp->misc_dev);
-//     if (ret) {
-//         dev_err(dev, "Failed to initialize sysfs\n");
-//         goto err_miscdev;
-//     }
+    /* Initialize the temperature simulator (timer)*/
+   ret = nxp_simtemp_simulator_init(simtemp);
+    if (ret) {
+        dev_err(dev, "Failed to initialize simulator\n");
+        goto err_sysfs;
+    }
 
     dev_info(dev, "Device successfully probed\n");
     return 0;
 
-// err_miscdev:
-//     nxp_simtemp_miscdev_exit();
-err_simulator:
-    nxp_simtemp_simulator_exit(simtemp);
+    /*Action error section*/
+//err_simulator: Not necessary for now
+//    nxp_simtemp_simulator_exit(simtemp);
+err_sysfs:
+    nxp_simtemp_sysfs_exit(simtemp);
+err_miscdev:
+    nxp_simtemp_miscdev_exit(simtemp);
+err_cleanup:
+    nxp_simtemp_locks_exit(simtemp);
 
     return ret;
 }
@@ -103,18 +114,19 @@ static int nxp_simtemp_remove(struct platform_device *pdev)
     dev_info(&pdev->dev, "Removing device\n");
 
     // /* Clean up in reverse order of creation */
-    pr_emerg("Removing device 1\n");
-    msleep(50); // 50ms de delay
-    // nxp_simtemp_sysfs_exit(simtemp->misc_dev);
-    pr_emerg("Removing device 2\n");
-    msleep(50); // 50ms de delay
+    debug_pr_delay("Removing Simulator\n");
     nxp_simtemp_simulator_exit(simtemp);
-    pr_emerg("Removing device 3\n");
-    msleep(50); // 50ms de delay
-    nxp_simtemp_miscdev_exit();
-    dev_info(&pdev->dev, "Removing device Done\n");
-    msleep(50); // 50ms de delay
 
+    debug_pr_delay("Removing Sysfs\n");
+    nxp_simtemp_sysfs_exit(simtemp);
+    
+    debug_pr_delay("Removing Miscdev\n");
+    nxp_simtemp_miscdev_exit(simtemp);
+
+    //mutex is remove by devm_kzalloc automaticlly
+    debug_pr_delay("Removing Locks\n");
+
+    dev_info(&pdev->dev, "Removing device Done\n");
     return 0;
 }
 
@@ -172,19 +184,11 @@ static int __init nxp_simtemp_init(void)
 static void __exit nxp_simtemp_exit(void)
 {
     pr_info("Exiting NXP simtemp driver\n");
-    msleep(50); // 50ms de delay
-
-    pr_emerg("device unregister\n");
-    msleep(50); // 50ms de delay
+    debug_pr_delay("device unregister\n");
     platform_device_unregister(pdev_test);
-
-
-    pr_emerg("Driver unregister\n");
-    msleep(50); // 50ms de delay
+    debug_pr_delay("Driver unregister\n");
     platform_driver_unregister(&nxp_simtemp_driver);
-
-    pr_emerg("Exit Done\n");
-    msleep(50); // 50ms de delay
+    debug_pr_delay("Exit Done\n");
 }
 
 MODULE_LICENSE("GPL");
