@@ -21,10 +21,13 @@
 #include <linux/ktime.h>    // Needed for ktime_get_ns()
 
 #include "simtemp_debug.h"
+#include "nxp_simtemp_config.h"
 
 /* --- Flags for simtemp_sample --- */
 #define SIMTEMP_SAMPLE_FLAG_NEW             (1 << 0) /* Indicates a fresh sample */
 #define SIMTEMP_SAMPLE_FLAG_THRESHOLD_HI    (1 << 1) /* Indicates threshold crossed */
+#define SIMTEMP_SAMPLE_FLAG_OUT_OF_RANGE    (2 << 1) /* Indicates threshold crossed */
+
 /* Add more flags as needed */
 
 /**

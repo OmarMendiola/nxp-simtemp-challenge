@@ -21,11 +21,16 @@
 static ssize_t sampling_ms_show(struct device *dev,
                                 struct device_attribute *attr, char *buf)
 {
-    struct simtemp_dev *simtemp = dev_get_drvdata(dev);
-    debug_pr_addr("show: dev    ", dev);
-    debug_pr_addr("show: simtemp", simtemp);
+struct simtemp_dev *simtemp = dev_get_drvdata(dev);
+	if (!simtemp) return -ENODEV;
+	debug_pr_addr("show: dev    ", dev);
+	debug_pr_addr("show: simtemp", simtemp);
 
-    return sysfs_emit(buf, "%u\n", simtemp->sampling_ms);
+    mutex_lock(&simtemp->lock);
+    u32 sampling_ms = simtemp->sampling_ms;
+    mutex_unlock(&simtemp->lock);
+
+	return sysfs_emit(buf, "%u\n", sampling_ms);
 }
 
 static ssize_t sampling_ms_store(struct device *dev,
@@ -33,16 +38,33 @@ static ssize_t sampling_ms_store(struct device *dev,
                                  const char *buf, size_t count)
 {
     struct simtemp_dev *simtemp = dev_get_drvdata(dev);
-    unsigned long val;
-    int ret = kstrtoul(buf, 10, &val);
-    if (ret)
-        return ret;
+	unsigned long val;
+	int ret;
 
-    mutex_lock(&simtemp->lock);
-    simtemp->sampling_ms = val;
-    mutex_unlock(&simtemp->lock);
+	if (!simtemp) return -ENODEV;
 
-    return count;
+	ret = kstrtoul(buf, 10, &val);
+	if (ret) {
+		pr_err("simtemp: Invalid input for sampling_ms: '%s'\n", buf);
+		return ret;
+	}
+
+	/* --- VALIDATION --- */
+	if (val < SIMTEMP_SAMPLING_MS_MIN || val > SIMTEMP_SAMPLING_MS_MAX) {
+		pr_warn("simtemp: sampling_ms value %lu out of range [%u-%u]\n",
+		        val, SIMTEMP_SAMPLING_MS_MIN, SIMTEMP_SAMPLING_MS_MAX);
+		return -EINVAL; /* Invalid argument */
+	}
+	/* --- END VALIDATION --- */
+
+	mutex_lock(&simtemp->lock);
+	simtemp->sampling_ms = (u32)val;
+	/* Optionally: Restart timer immediately with new value, or let the next callback handle it */
+	/* mod_timer(&simtemp->timer, jiffies + msecs_to_jiffies(simtemp->sampling_ms)); */
+	mutex_unlock(&simtemp->lock);
+
+	debug_dbg("sampling_ms set to %u\n", simtemp->sampling_ms);
+	return count;
 }
 static DEVICE_ATTR_RW(sampling_ms);
 
@@ -51,7 +73,12 @@ static ssize_t threshold_mc_show(struct device *dev,
                                  struct device_attribute *attr, char *buf)
 {
     struct simtemp_dev *simtemp = dev_get_drvdata(dev);
-    return sysfs_emit(buf, "%d\n", simtemp->threshold_mc);
+	if (!simtemp) return -ENODEV;
+
+    mutex_lock(&simtemp->lock);
+    s32 threshold_mc = simtemp->threshold_mc;
+    mutex_unlock(&simtemp->lock);
+	return sysfs_emit(buf, "%d\n", threshold_mc);
 }
 
 static ssize_t threshold_mc_store(struct device *dev,
@@ -59,16 +86,31 @@ static ssize_t threshold_mc_store(struct device *dev,
                                   const char *buf, size_t count)
 {
     struct simtemp_dev *simtemp = dev_get_drvdata(dev);
-    long val;
-    int ret = kstrtol(buf, 10, &val);
-    if (ret)
-        return ret;
+	long val;
+	int ret;
 
-    mutex_lock(&simtemp->lock);
-    simtemp->threshold_mc = val;
-    mutex_unlock(&simtemp->lock);
+	if (!simtemp) return -ENODEV;
 
-    return count;
+	ret = kstrtol(buf, 10, &val);
+	if (ret) {
+		pr_err("simtemp: Invalid input for threshold_mc: '%s'\n", buf);
+		return ret;
+	}
+
+	/* --- VALIDATION --- */
+	if (val < SIMTEMP_THRESHOLD_MC_MIN || val > SIMTEMP_THRESHOLD_MC_MAX) {
+		pr_warn("simtemp: threshold_mc value %ld out of range [%d-%d]\n",
+		        val, SIMTEMP_THRESHOLD_MC_MIN, SIMTEMP_THRESHOLD_MC_MAX);
+		return -EINVAL; /* Invalid argument */
+	}
+	/* --- END VALIDATION --- */
+
+	mutex_lock(&simtemp->lock);
+	simtemp->threshold_mc = (s32)val;
+	mutex_unlock(&simtemp->lock);
+
+	debug_dbg("threshold_mc set to %d\n", simtemp->threshold_mc);
+	return count;
 }
 static DEVICE_ATTR_RW(threshold_mc);
 
@@ -84,7 +126,15 @@ static ssize_t mode_show(struct device *dev,
                          struct device_attribute *attr, char *buf)
 {
     struct simtemp_dev *simtemp = dev_get_drvdata(dev);
-    return sysfs_emit(buf, "%s\n", simtemp_modes[simtemp->mode]);
+	if (!simtemp) return -ENODEV;
+
+    mutex_lock(&simtemp->lock);
+    enum simtemp_mode mode = simtemp->mode;
+    mutex_unlock(&simtemp->lock);
+	/* Check bounds in case mode is somehow corrupted */
+	if (mode >= SIMTEMP_MODE_MAX || mode < 0)
+		return sysfs_emit(buf, "invalid\n");
+	return sysfs_emit(buf, "%s\n", simtemp_modes[mode]);
 }
 
 static ssize_t mode_store(struct device *dev,
@@ -92,18 +142,22 @@ static ssize_t mode_store(struct device *dev,
                           const char *buf, size_t count)
 {
     struct simtemp_dev *simtemp = dev_get_drvdata(dev);
-    int i;
+	int i;
 
-    for (i = 0; i < SIMTEMP_MODE_MAX; i++) {
-        if (sysfs_streq(buf, simtemp_modes[i])) {
-            mutex_lock(&simtemp->lock);
-            simtemp->mode = i;
-            mutex_unlock(&simtemp->lock);
-            return count;
-        }
-    }
+	if (!simtemp) return -ENODEV;
 
-    return -EINVAL;
+	for (i = 0; i < SIMTEMP_MODE_MAX; i++) {
+		if (sysfs_streq(buf, simtemp_modes[i])) {
+			mutex_lock(&simtemp->lock);
+			simtemp->mode = i;
+			mutex_unlock(&simtemp->lock);
+			debug_dbg("mode set to %s\n", simtemp_modes[i]);
+			return count;
+		}
+	}
+
+	pr_warn("simtemp: Invalid mode value: '%s'. Valid modes: normal, noisy, ramp\n", buf);
+	return -EINVAL;
 }
 static DEVICE_ATTR_RW(mode);
 
@@ -112,11 +166,21 @@ static ssize_t stats_show(struct device *dev,
                           struct device_attribute *attr, char *buf)
 {
     struct simtemp_dev *simtemp = dev_get_drvdata(dev);
-    return sysfs_emit(buf, "updates=%llu alerts=%llu errors=%llu\n",
-                      simtemp->stats.updates,
-                      simtemp->stats.alerts,
-                      simtemp->stats.errors);
+	u64 updates, alerts, errors; /* Use local vars to minimize lock time */
+
+	if (!simtemp) return -ENODEV;
+
+	/* Get stats atomically */
+	mutex_lock(&simtemp->lock);
+	updates = simtemp->stats.updates;
+	alerts = simtemp->stats.alerts;
+	errors = simtemp->stats.errors;
+	mutex_unlock(&simtemp->lock);
+
+	return sysfs_emit(buf, "updates=%llu alerts=%llu errors=%llu\n",
+	                  updates, alerts, errors);
 }
+
 static DEVICE_ATTR_RO(stats);
 
 

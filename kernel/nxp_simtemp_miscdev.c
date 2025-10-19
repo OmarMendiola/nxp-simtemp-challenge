@@ -18,6 +18,25 @@
 #include "nxp_simtemp.h"
 
 
+/* --- Wait Queue Condition Macro --- */
+
+/**
+ * @brief Checks if a new sample is available under lock.
+ * Intended for use as the condition in wait_event_* macros.
+ * @param _simtemp Pointer to the struct simtemp_dev.
+ * @return True if a new sample is available, false otherwise.
+ */
+#define is_new_sample_available(_simtemp) \
+	({ \
+		bool _available; \
+		mutex_lock(&(_simtemp)->lock); \
+		_available = (_simtemp)->new_sample_available; \
+		mutex_unlock(&(_simtemp)->lock); \
+		_available; \
+	})
+
+static u32 timeout_jiffies;
+
 static int simtemp_open(struct inode *inode, struct file *filp)
 {
     struct simtemp_dev *simtemp;
@@ -58,7 +77,7 @@ struct simtemp_dev *simtemp = filp->private_data;
 
 	debug_dbg("simtemp_read called, count=%zu, offp=%lld\n", count, *offp);
 
-	/* Check if simtemp pointer is valid (set in open) */
+/* Check if simtemp pointer is valid (set in open) */
 	if (!simtemp) {
 		pr_err("simtemp: No device context in file private_data! Was open called?\n");
 		return -ENODEV;
@@ -66,7 +85,7 @@ struct simtemp_dev *simtemp = filp->private_data;
 	debug_pr_addr("simtemp_read: simtemp context", simtemp);
 
 
-	/* We only support reading the whole structure from the beginning */
+/* We only support reading the whole structure from the beginning */
 	if (*offp > 0) {
 		debug_dbg("simtemp_read: EOF condition (*offp > 0)\n");
 		return 0; /* EOF */
@@ -78,32 +97,44 @@ struct simtemp_dev *simtemp = filp->private_data;
 		return -EINVAL; /* Invalid argument */
 	}
 
-	/* --- Blocking Logic --- */
+/* --- Blocking Logic with timeout--- */
 	debug_dbg("simtemp_read: Waiting for new sample...\n");
 	/* Sleep until simtemp->new_sample_available is true */
-	ret = wait_event_interruptible(simtemp->read_wq, simtemp->new_sample_available);
-	if (ret) {
+	ret = wait_event_interruptible_timeout(simtemp->read_wq, is_new_sample_available(simtemp), timeout_jiffies);
+	if (ret < 0) {
+		/* Interrupted by signal */
 		debug_dbg("simtemp_read: Wait interrupted by signal (ret=%d)\n", ret);
-		return -ERESTARTSYS; /* Interrupted, tell VFS to restart syscall */
+		return -ERESTARTSYS;
+	} else if (ret == 0) {
+		/* Timeout occurred */
+		pr_warn("simtemp: Read timed out after %d ms waiting for new sample\n",
+		        SIMTEMP_READ_TIMEOUT_MS);
+		return -ETIMEDOUT; /* Return Timeout error */
 	}
+	/* --- Woken up: ret > 0, new_sample_available is true --- */
+	debug_dbg("simtemp_read: Woken up! New sample available.\n");
 	/* --- Woken up: new_sample_available is guaranteed true --- */
 	debug_dbg("simtemp_read: Woken up! New sample available.\n");
 
 
-	/* --- Critical Section: Get the sample and mark it consumed --- */
-	mutex_lock(&simtemp->lock);
-
-	/* Copy the latest sample data to our local variable */
+/* --- Critical Section: Get the sample and mark it consumed --- */
+mutex_lock(&simtemp->lock);
+	if (!simtemp->new_sample_available) {
+		/* Race condition check: sample consumed between wake-up and lock */
+		mutex_unlock(&simtemp->lock);
+		debug_dbg("simtemp_read: Race condition detected, restarting wait.\n");
+		/* Consider restarting the wait or returning -EAGAIN */
+		/* For simplicity here, we might just return 0 bytes read or an error */
+		/* Or better: retry the wait_event call - but this can get complex */
+		return -EAGAIN; // Indicate user should try again
+	}
 	local_sample = simtemp->latest_sample;
-
-	/* Mark sample as consumed */
-	simtemp->new_sample_available = false;
-
+	simtemp->new_sample_available = false; /* Mark consumed */
 	mutex_unlock(&simtemp->lock);
-	/* --- End Critical Section --- */
+/* --- End Critical Section --- */
 
 
-	/* Copy the local sample to user space */
+/* Copy the local sample to user space */
 	debug_dbg("simtemp_read: Copying sample to user space (size %zu)\n", sizeof(local_sample));
 	if (copy_to_user(buf, &local_sample, sizeof(local_sample))) {
 		pr_err("simtemp: Failed to copy sample to user space\n");
@@ -142,6 +173,9 @@ int nxp_simtemp_miscdev_init(struct simtemp_dev *simtemp)
     misc_device->fops = &simtemp_fops;
     /* Set the parent device before registering */
     misc_device->parent = simtemp->dev; //platform device's is the parent
+
+	/*Calculate bloking read timeout in jiffies just once*/
+	timeout_jiffies = msecs_to_jiffies(SIMTEMP_READ_TIMEOUT_MS); 
 
      printk(KERN_INFO "Registering misc device: %s\n", misc_device->name); 
 
