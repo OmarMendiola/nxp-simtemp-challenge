@@ -133,8 +133,8 @@ struct simtemp_dev *simtemp = from_timer(simtemp, t, timer);
 int nxp_simtemp_simulator_init(struct simtemp_dev *simtemp)
 {
     /* Set default values */
-    simtemp->sampling_ms = SIMTEMP_SAMPLING_MS_DEFAULT;
-    simtemp->threshold_mc = SIMTEMP_THRESHOLD_MC_DEFAULT;
+    //simtemp->sampling_ms = SIMTEMP_SAMPLING_MS_DEFAULT;
+    //simtemp->threshold_mc = SIMTEMP_THRESHOLD_MC_DEFAULT;
     simtemp->mode = SIMTEMP_MODE_NORMAL;
     simtemp->latest_sample.temp_mc = SIMTEMP_TEMPERATURE_MC_INITIAL; /* Initial temperature 25 C */
 	simtemp->latest_sample.timestamp_ns = ktime_get_ns(); /* Initial timestamp */

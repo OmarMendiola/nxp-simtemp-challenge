@@ -14,6 +14,7 @@
 #include <linux/miscdevice.h>
 #include <linux/module.h>
 #include <linux/uaccess.h>
+#include <linux/poll.h>
 
 #include "nxp_simtemp.h"
 
@@ -39,19 +40,29 @@ static u32 timeout_jiffies;
 
 static int simtemp_open(struct inode *inode, struct file *filp)
 {
-    struct simtemp_dev *simtemp;
+struct simtemp_dev *simtemp;
     struct miscdevice *misc_device;
 
-    // misc_device = container_of(inode->i_cdev, struct miscdevice, this_device->cdev);
-    // simtemp = container_of(misc_device, struct simtemp_dev, misc_dev);
-
+    /* Get Miscdevice from filp->private_data */
     misc_device = filp->private_data;
+    if (!misc_device) { /* check a valid pointer*/
+        pr_err("simtemp: open: misc_device is NULL in private_data\n");
+        return -ENODEV;
+    }
+
+    /* get simtemp_dev using container_of */
     simtemp = container_of(misc_device, struct simtemp_dev, misc_dev);
+    if (!simtemp) { /* check a valid pointer */
+         pr_err("simtemp: open: container_of failed to find simtemp_dev\n");
+         return -ENODEV;
+    }
+
 
     debug_pr_addr("simtemp_open: inode", inode);
     debug_pr_addr("simtemp_open: misc_device", misc_device);
     debug_pr_addr("simtemp_open: simtemp", simtemp);
 
+    /* Overwrtire private_data to point to simtemp_dev */
     filp->private_data = simtemp;
     return 0;
 }
@@ -73,7 +84,7 @@ static ssize_t simtemp_read(struct file *filp, char __user *buf,
 {
 struct simtemp_dev *simtemp = filp->private_data;
 	struct simtemp_sample local_sample; /* Local copy to avoid holding lock during copy_to_user */
-	int ret;
+	long ret;
 
 	debug_dbg("simtemp_read called, count=%zu, offp=%lld\n", count, *offp);
 
@@ -96,27 +107,38 @@ struct simtemp_dev *simtemp = filp->private_data;
 			count, sizeof(struct simtemp_sample));
 		return -EINVAL; /* Invalid argument */
 	}
-
-/* --- Blocking Logic with timeout--- */
-	debug_dbg("simtemp_read: Waiting for new sample...\n");
-	/* Sleep until simtemp->new_sample_available is true */
-	ret = wait_event_interruptible_timeout(simtemp->read_wq, is_new_sample_available(simtemp), timeout_jiffies);
-	if (ret < 0) {
-		/* Interrupted by signal */
-		debug_dbg("simtemp_read: Wait interrupted by signal (ret=%d)\n", ret);
-		return -ERESTARTSYS;
-	} else if (ret == 0) {
-		/* Timeout occurred */
-		pr_warn("simtemp: Read timed out after %d ms waiting for new sample\n",
-		        SIMTEMP_READ_TIMEOUT_MS);
-		return -ETIMEDOUT; /* Return Timeout error */
+	/* start Reading process blocking or non-blocking*/
+	if(filp->f_flags & O_NONBLOCK)
+	{
+		/* --- Non-blocking Logic --- */
+		debug_dbg("simtemp_read: Non-blocking read requested\n");
+		if(is_new_sample_available(simtemp) == false)
+		{
+			debug_dbg("simtemp_read: Non-blocking read and no new sample available\n");
+			return -EAGAIN; /* No data available */
+		}
 	}
-	/* --- Woken up: ret > 0, new_sample_available is true --- */
-	debug_dbg("simtemp_read: Woken up! New sample available.\n");
-	/* --- Woken up: new_sample_available is guaranteed true --- */
-	debug_dbg("simtemp_read: Woken up! New sample available.\n");
+	else{
 
+		/* --- Blocking Logic with timeout--- */
+		debug_dbg("simtemp_read: Waiting for new sample...\n");
+		/* Sleep until simtemp->new_sample_available is true */
+		ret = wait_event_interruptible_timeout(simtemp->read_wq, is_new_sample_available(simtemp), timeout_jiffies);
+		if (ret < 0) {
+			/* Interrupted by signal */
+			debug_dbg("simtemp_read: Wait interrupted by signal (ret=%ld)\n", ret);
+			return -ERESTARTSYS;
+		} else if (ret == 0) {
+			/* Timeout occurred */
+			pr_warn("simtemp: Read timed out after %d ms waiting for new sample\n",
+					SIMTEMP_READ_TIMEOUT_MS);
+			return -ETIMEDOUT; /* Return Timeout error */
+		}
+		/* --- Woken up: ret > 0, new_sample_available is true --- */
+		debug_dbg("simtemp_read: Woken up! New sample available.\n");
 
+	}
+/* --- At this point, a new sample is available --- */
 /* --- Critical Section: Get the sample and mark it consumed --- */
 mutex_lock(&simtemp->lock);
 	if (!simtemp->new_sample_available) {
@@ -148,10 +170,61 @@ mutex_lock(&simtemp->lock);
 	return sizeof(local_sample); /* Return the number of bytes successfully read */
 }
 
+/**
+ * @brief Poll function for the misc device.
+ *
+ * Called by poll(), select(), epoll_wait(). Allows userspace to wait
+ * efficiently for the device to become readable.
+ *
+ * @param filp Pointer to the file structure.
+ * @param wait Poll table structure used to register wait queues.
+ * @return __poll_t Mask indicating device status (POLLIN | POLLRDNORM if readable).
+ */
+static __poll_t simtemp_poll(struct file *filp, poll_table *wait)
+{
+	bool sample_available;
+	u32 sample_flags;
+	struct simtemp_dev *simtemp = filp->private_data;
+	__poll_t mask = 0;
+	/*validate simtemp pointer*/
+	if (!simtemp) {
+		pr_err("simtemp: poll: No device context!\n");
+		return EPOLLERR; /* O alguna otra máscara de error apropiada */
+	}
+	debug_pr_addr("simtemp_poll: simtemp context", simtemp);
+
+	/* Register the wait queue */
+	poll_wait(filp, &simtemp->read_wq, wait);
+
+/*Check current state under lock */
+	mutex_lock(&simtemp->lock);
+	sample_available = simtemp->new_sample_available;
+	sample_flags = simtemp->latest_sample.flags; // Get flags of the latest sample
+	mutex_unlock(&simtemp->lock);
+
+/*Determine return mask based on state */
+	if (sample_available) {
+		debug_dbg("simtemp_poll: New sample available.\n");
+		mask |= POLLIN | POLLRDNORM; // Device is readable
+
+		/*Check for priority event (threshold) within the available sample */
+		if (sample_flags & SIMTEMP_SAMPLE_FLAG_THRESHOLD_HI) {
+			debug_dbg("simtemp_poll: Threshold flag is set in the available sample.\n");
+			mask |= POLLPRI; // Priority condition met
+		}
+	} else {
+		debug_dbg("simtemp_poll: No new sample available yet.\n");
+	}
+
+	return mask;
+}
+
 static const struct file_operations simtemp_fops = {
     .owner = THIS_MODULE,
     .open = simtemp_open,
     .read = simtemp_read,
+	.poll = simtemp_poll,
+
 };
 
 /**
