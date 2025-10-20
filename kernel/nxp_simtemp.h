@@ -73,9 +73,9 @@ struct simtemp_dev {
     enum simtemp_mode mode;    /* Simulation mode */
 
     /* State for blocking read*/
-    struct simtemp_sample latest_sample;                /* Current temperature in milli-Celsius */
-    bool new_sample_available;                 /* Flag indicating if a new sample is available */
-    wait_queue_head_t read_wq;           /* Wait queue for readers */
+    struct simtemp_sample latest_sample;   /* Current temperature in milli-Celsius */
+    bool new_sample_available;             /* Flag indicating if a new sample is available */
+    wait_queue_head_t read_wq;             /* Wait queue for readers */
 
     struct simtemp_stats stats;/* Statistics counters */
 };
