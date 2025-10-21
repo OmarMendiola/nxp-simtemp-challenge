@@ -122,6 +122,12 @@ user/cli/cli_test
 # Editor and IDE configuration folders
 .vscode/
 
+# Python virtual environment
+.venv/
+
+# Python cache for CLI
+user/cli/__pycache__/
+
 
 
 

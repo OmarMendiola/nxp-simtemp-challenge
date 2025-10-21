@@ -96,6 +96,8 @@ struct simtemp_dev *simtemp = from_timer(simtemp, t, timer);
 	if(sample_temp.flags & SIMTEMP_SAMPLE_FLAG_OUT_OF_RANGE) {
 		stats_temp.errors++;
 	}
+
+	sample_temp.temp_mc = new_temp;
 	/* --- Update Shared State --- */
 	mutex_lock(&simtemp->lock);
 

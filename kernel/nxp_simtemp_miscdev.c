@@ -224,7 +224,7 @@ static const struct file_operations simtemp_fops = {
     .open = simtemp_open,
     .read = simtemp_read,
 	.poll = simtemp_poll,
-
+	.llseek  = no_llseek,
 };
 
 /**
