@@ -1,0 +1,6 @@
+// test-wrapper.dts
+/dts-v1/; // Directiva estándar requerida al inicio de un .dts
+/plugin/; // Opcional, pero bueno si planeas usarlo como overlay
+
+// Incluye tu archivo .dtsi
+#include "nxp-simtemp.dtsi"
