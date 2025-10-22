@@ -1,0 +1,12 @@
+/*
+ * Device Tree Source Include file for the NXP Simulated Temperature Sensor
+ */
+
+/ {
+    simtemp0: simtemp@0 {
+        compatible = "nxp,simtemp";
+        sampling-ms = <100>;
+        threshold-mC = <45000>;
+        status = "okay";
+    };
+};
