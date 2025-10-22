@@ -108,8 +108,7 @@ struct simtemp_dev *simtemp = filp->private_data;
 		return -EINVAL; /* Invalid argument */
 	}
 	/* start Reading process blocking or non-blocking*/
-	if(filp->f_flags & O_NONBLOCK)
-	{
+	if(filp->f_flags & O_NONBLOCK){
 		/* --- Non-blocking Logic --- */
 		debug_dbg("simtemp_read: Non-blocking read requested\n");
 		if(is_new_sample_available(simtemp) == false)
