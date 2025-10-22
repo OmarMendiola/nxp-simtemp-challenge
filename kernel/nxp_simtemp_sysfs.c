@@ -23,6 +23,7 @@ static ssize_t sampling_ms_show(struct device *dev,
 {
 struct simtemp_dev *simtemp = dev_get_drvdata(dev);
 	if (!simtemp) return -ENODEV;
+
 	debug_pr_addr("show: dev    ", dev);
 	debug_pr_addr("show: simtemp", simtemp);
 
