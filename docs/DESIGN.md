@@ -5,7 +5,7 @@ This document outlines the design choices and implementation details for the `nx
 ## 1. Block Diagram & Interaction
 
 ### Block Diagram
-
+![Block diagram](Diagrams/Block%20diagram.jpg)
 
 ### Interaction Description
 
