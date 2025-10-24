@@ -109,8 +109,8 @@ echo "INFO: Launching user-space CLI self-test..."
 echo "      (The test will run automatically. It takes about 10 seconds)."
 echo "----------------------------------------------------"
 # The python script's main function runs a menu. We pipe the commands to it:
-# '4' to run the self-test, and '5' to exit the CLI.
-printf "4\n5\n" | python3 "${USER_APP_CLI}"
+# '3' to run Start Periodic Sampling (Ctrl+C to stop), and '5' to exit the CLI.
+printf "3\n5\n" | python3 "${USER_APP_CLI}"
 echo "----------------------------------------------------"
 echo "INFO: User-space test finished."
 

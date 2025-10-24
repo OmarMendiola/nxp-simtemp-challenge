@@ -79,7 +79,7 @@ def run_cli():
         elif choice == '3':
             print_samples.start_sampling()
         elif choice == '4':
-            result = test_mode.run_test()
+            result = test_mode.run_all_tests()
             if result == TEST_PASS_CODE:
                 print(">>> Test PASSED <<<")
             else:
