@@ -1,0 +1,27 @@
+From 8b6f7da86a2344fdba88bf3066014d49113fad60 Mon Sep 17 00:00:00 2001
+From: Omar Mendiola <omar.men7866@gmail.com>
+Date: Fri, 24 Oct 2025 11:51:51 -0600
+Subject: [PATCH] "docs: Add video and repository links to README"
+
+---
+ docs/README.md | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/docs/README.md b/docs/README.md
+index 099f825..3811976 100644
+--- a/docs/README.md
++++ b/docs/README.md
+@@ -2,8 +2,8 @@
+ 
+ This project implements a Linux kernel module that simulates a temperature sensor device. It provides a character device interface (`/dev/simtemp`) for reading temperature samples and a sysfs interface (`/sys/class/misc/simtemp/`) for configuration and statistics. A user-space Python CLI application is included for interacting with the driver.
+ 
+-**Git Repository:** [text](https://github.com/OmarMendiola/nxp-simtemp-challenge)
+-**Demo Video:** [text](https://www.youtube.com/watch?v=bRTNjQ5id-U)
++**Git Repository:** [OmarMendiola/nxp-simtemp-challenge](https://github.com/OmarMendiola/nxp-simtemp-challenge)
++**Demo Video:** [My NXP Challenge Project: A Linux Platform Driver (Full Demo & Test Script)](https://www.youtube.com/watch?v=bRTNjQ5id-U)
+ 
+ ## Features
+ 
+-- 
+2.43.0
+
