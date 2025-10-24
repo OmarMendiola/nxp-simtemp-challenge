@@ -2,8 +2,8 @@
 
 This project implements a Linux kernel module that simulates a temperature sensor device. It provides a character device interface (`/dev/simtemp`) for reading temperature samples and a sysfs interface (`/sys/class/misc/simtemp/`) for configuration and statistics. A user-space Python CLI application is included for interacting with the driver.
 
-**Git Repository:** [Link to your Git repository here]
-**Demo Video:** [Link to your demo video here]
+**Git Repository:** [text](https://github.com/OmarMendiola/nxp-simtemp-challenge)
+**Demo Video:** [text](https://www.youtube.com/watch?v=bRTNjQ5id-U)
 
 ## Features
 
